@@ -1,0 +1,18 @@
+/*
+ * This file is part of the orkan/wp-base package.
+ * Copyright (c) 2024 Orkan <orkans+wpbase@gmail.com>
+ */
+/* DO NOT EDIT - AUTO-GENERATED FROM: wp-content\plugins\ork-base\assets\css/src/tool-ajaxer.css */
+.ork-spinner {
+	background: url(/wp-admin/images/spinner.gif) no-repeat;
+	display: inline-block;
+	visibility: hidden;
+	vertical-align: middle;
+	width: 20px;
+	height: 20px;
+	margin: 0 .5rem;
+}
+
+.ork-spinner.is-active {
+	visibility: visible;
+}

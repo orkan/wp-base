@@ -1,0 +1,45 @@
+{
+	"name": "orkan/wp-base",
+	"description": "Wordpress plugin: WP Base",
+	"homepage": "https://github.com/orkan/wp-base",
+	"license": "MIT",
+	"authors": [
+		{
+			"name": "Orkan",
+			"role": "Lead",
+			"email": "orkans+new@gmail.com"
+		}
+	],
+	"require": {
+		"erusev/parsedown": "^1.7",
+		"orkan/utils": "^9.0"
+	},
+	"autoload": {
+		"psr-4": {
+			"Orkan\\WP\\Base\\": "src"
+		}
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"Orkan\\WP\\Base\\Tests\\": "tests"
+		}
+	},
+	"config": {
+		"vendor-dir": "vendor",
+		"optimize-autoloader": false,
+		"sort-packages": true,
+		"allow-plugins": {
+			"composer/installers": true
+		}
+	},
+	"extra": {
+		"ork-base": {
+			"factory-ns": "Orkan\\WP\\Base\\Factory",
+			"wp-config": "/../html/wp-config.php"
+		},
+		"branch-alias": {
+			"dev-master": "1.0.x-dev",
+			"dev-develop": "1.x-dev"
+		}
+	}
+}
