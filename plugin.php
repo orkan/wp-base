@@ -8,8 +8,8 @@ namespace Orkan\WP\Base;
 /*
  * Plugin Name: Ork Base
  * Description: WordPress plugin boilerplate.
- * Version: 1.0.0
- * Date: Sat, 11 May 2024 16:28:53 +02:00
+ * Version: 1.0.1
+ * Date: Sat, 11 May 2024 17:35:49 +02:00
  * Author: Orkan <orkans+wpbase@gmail.com>
  * Author URI: https://github.com/orkan
  */

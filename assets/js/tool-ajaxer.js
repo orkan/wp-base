@@ -2,7 +2,7 @@
  * This file is part of the orkan/wp-base package.
  * Copyright (c) 2024 Orkan <orkans+wpbase@gmail.com>
  */
-/* DO NOT EDIT - AUTO-GENERATED FROM: wp-content\plugins\ork-base\assets\js/src/tool-ajaxer.js */
+/* DO NOT EDIT - AUTO-GENERATED FROM: wp-content/plugins/ork-base1/assets/js/src/tool-ajaxer.js */
 window.ork = window.ork || {};
 
 (function ($) {

@@ -2,7 +2,7 @@
  * This file is part of the orkan/wp-base package.
  * Copyright (c) 2024 Orkan <orkans+wpbase@gmail.com>
  */
-/* DO NOT EDIT - AUTO-GENERATED FROM: wp-content\plugins\ork-base\assets\js/src/main.js */
+/* DO NOT EDIT - AUTO-GENERATED FROM: wp-content/plugins/ork-base1/assets/js/src/main.js */
 window.ork = window.ork || {};
 
 (function ($) {
@@ -11,27 +11,26 @@ window.ork = window.ork || {};
 	 * ---------------------------------------------------------------------------------------------------------
 	 * Ork | Base
 	 */
-	$.extend( ork, {
-	
+	ork.Base = {
 		/**
 		 * Get element ID from name.
 		 */
-		getId: function( name ) {
-			return '#' + this.name2id[name];
+		getId( name ) {
+			return '#' + ork.name2id[name];
 		},
 	
 		/**
 		 * Get element from name.
 		 */
-		getElement: function( name ) {
-			return document.getElementById( this.name2id[name] );
+		getElement( name ) {
+			return document.getElementById( ork.name2id[name] );
 		},
 	
 		/**
 		 * Logger.
 		 */
-		log: function( msg, type = 'log' ) {
-			if( 'debug' === type && !this.isDebug ) {
+		log( msg, type = 'log' ) {
+			if( 'debug' === type && !ork.debug ) {
 				return;
 			}
 			else {
@@ -41,17 +40,14 @@ window.ork = window.ork || {};
 			console[type]( msg );
 		},
 	
-		/**
-		 * Check if HTML element is empty.
-		 */
-		isEmpty: function( el ) {
-			return $( el ).length ? !$.trim( $( el ).html() ) : true;
+		debug( msg ) {
+			this.log( msg, 'debug' );
 		},
 	
 		/**
 		 * Clear FORM inputs.
 		 */
-		clearForm: function( form ) {
+		clearForm( form ) {
 			form.reset();
 			Array.from( form.elements ).forEach( input => {
 				if( input.disabled ) {
@@ -79,25 +75,23 @@ window.ork = window.ork || {};
 		},
 	
 		/**
-		 * Convert Object to FormData instance.
+		 * Build query string from object.
 		 */
-		buildFormData( arr ) {
-			var Data = new FormData();
-			$.each( arr, ( name, value ) => Data.append( name, value ) );
-			return Data;
+		buildHttpQuery( obj ) {
+			const Query = new URLSearchParams();
+	
+			for( const [name, value] of Object.entries( obj ) ) {
+				Query.append( name, value );
+			}
+	
+			return Query.toString();
 		},
 	
 		/**
-		 * Build query string from array.
+		 * [Input] Show/hide spinner
 		 */
-		buildHttpQuery( arr ) {
-			var Query = new URLSearchParams();
-	
-			$.each( arr, ( name, value ) => {
-				Query.append( name, value );
-			});
-	
-			return Query.toString();
+		showSpinner( id, show = true ) {
+			$( id + '_spin' ).toggleClass( 'is-active', show );
 		},
 	
 		/**
@@ -106,7 +100,7 @@ window.ork = window.ork || {};
 		async usleep( usec ) {
 			return await new Promise( (resolve, reject) => setTimeout( () => resolve(1), usec ) );
 		},
-	});
+	};
 
 	/*
 	 * ---------------------------------------------------------------------------------------------------------
@@ -114,18 +108,67 @@ window.ork = window.ork || {};
 	 */
 	ork.Ajax = {
 		/**
-		 * Append required elements to Request object
+		 * Ajax request
 		 */
-		prepareRequest: function( request, args = {} ) {
-			request[ork.nonce.name] = ork.nonce.action;
-			return $.extend( request, args );
+		async fetch( action, data = {}, opts = {} ) {
+			data.action = action;
+			data[ork.nonce.name] = ork.nonce.action;
+	
+			// Deaults...
+			opts = { ...{
+				method: 'POST',
+				signal:  null,
+				spinner: '',
+				body: this.getFormData( data ),
+			}, ...opts };
+	
+			let json, status;
+			this.spinner( opts.spinner, true );
+	
+			const Response = await fetch( ork.url, opts )
+				.then( Response => {
+					status = `[${Response.status}] ${Response.statusText}`;
+					ork.Base.debug( Response );
+					return Response.text();
+				})
+				.catch( E => {
+					throw new Error( E ); // Connection errors
+				});
+	
+			this.spinner( opts.spinner, false );
+	
+			try {
+				json = JSON.parse( Response );
+			} catch( E ) {
+				throw new Error( E ); // Data errors
+			}
+	
+			if( !json || !json.success ) {
+				throw new Error( json.data || status ); // WP errors
+			}
+	
+			return json.data;
+		},
+	
+		/**
+		 * Convert Object to FormData instance.
+		 */
+		getFormData( obj ) {
+			const Data = new FormData();
+			for( const [name, value] of Object.entries( obj ) ) {
+				Data.append( name, value );
+			}
+			return Data;
 		},
 	
 		/**
 		 * [Input] Show/hide spinner
 		 */
-		showSpinner: function( id, show = true ) {
-			$( id + '_spin' ).toggleClass( 'is-active', show );
+		spinner( id, show = true, className = 'is-active' ) {
+			if( id ) {
+				const ClassList = document.querySelector( id ).classList;
+				show ? ClassList.add( className ) : ClassList.remove( className );
+			}
 		},
 	};
 
