@@ -1,4 +1,4 @@
-# WordPress plugin boilerplate `v1.0.1`
+# WordPress plugin boilerplate `v1.0.2`
 Extendable PHP classes for easy customization.
 
 ## Out-of-the-box:
@@ -65,7 +65,7 @@ define( 'ORK_ASSET_MINIFY_JS', true );
 //define( 'ORK_ASSET_FORCE_MIN', true );
 ```
 In `debug` mode the plugin will rebuild and always enqueue the un-minified versions, unless `ORK_ASSET_FORCE_MIN` is set.
-By default the `debug` mode is set to `true` if the Plugin::VERSION constant is set as `"@" . "Version@"` string.
+By default the `debug` mode is set to `true` if the Plugin::VERSION constant is set as **"&#64;Version&#64;"** string.
 However, this can also be set manually, from the `plugin.php` file as follows:
 ```php
 Factory::cfg( 'debug', true );
@@ -143,4 +143,4 @@ Additionally, if you decide to build your assets automatically by using Composer
 [Orkan](https://github.com/orkan)
 
 ## Updated
-Sat, 11 May 2024 17:35:49 +02:00
+Sat, 11 May 2024 18:21:46 +02:00

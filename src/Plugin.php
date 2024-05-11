@@ -15,7 +15,7 @@ use Orkan\Utils;
 class Plugin
 {
 	const NAME = 'Ork Base';
-	const VERSION = '1.0.1';
+	const VERSION = '1.0.2';
 
 	/**
 	 * Error codes.
