@@ -26,76 +26,65 @@ class Tools
 	const MAX_HISTORY = 3;
 
 	/**
-	 * Tool action prefix.
+	 * Whether the current Tool page is active.
 	 */
-	protected static $hook;
+	protected $isPage;
 
 	/**
-	 * Whether the Tool page is currently displayed / proccessed.
+	 * Whether the current Tool ajax request is proccessed.
 	 */
-	protected static $isPage;
+	protected $isAjax;
 
 	/**
-	 * Whether the Tool ajax request is currently proccessed.
+	 * Connected?
 	 */
-	protected static $isAjax;
+	private $ready = false;
 
 	/**
-	 * Ajax actions.
+	 * Services:
 	 */
-	const ACTION = [];
-
-	/**
-	 * @var Factory
-	 */
-	protected static $Factory;
-
-	/**
-	 * @var Plugin
-	 */
-	protected static $Plugin;
-
-	/**
-	 * @var Settings
-	 */
-	protected static $Settings;
+	protected $Factory;
+	protected $Plugin;
+	protected $Settings;
 
 	/**
 	 * Setup.
 	 */
 	public function __construct( Factory $Factory )
 	{
-		static::$Factory = $Factory;
-		static::$Plugin = $Factory->Plugin();
-		static::$Settings = $Factory->Settings();
-		static::$hook = static::$Settings::OPTIONS_NAME;
+		$this->Factory = $Factory;
+		$this->Plugin = $Factory->Plugin();
+		$this->Settings = $Factory->Settings();
 	}
 
 	/**
 	 * Register all hooks.
 	 */
-	protected static function run(): void
+	protected function run(): void
 	{
-		static $ready;
+		$this->Settings->toolRegister( static::NAME, static::TITLE, static::ICON, static::MENU );
 
-		static::$Settings->toolRegister( static::NAME, static::TITLE, static::ICON, static::MENU );
-
-		if ( $ready ) {
+		if ( $this->ready ) {
 			return;
 		}
 
-		add_action( static::$hook . '_define', [ __CLASS__, 'actionDefine' ] );
-		add_action( static::$hook . '_submit', [ __CLASS__, 'actionSubmit' ] );
+		$this->isAjax = wp_doing_ajax();
+		$this->isPage = !$this->isAjax && $this->Settings->isToolRender( static::NAME );
 
-		$ready = true;
+		if ( $this->isPage ) {
+			add_action( $this->Settings->getHookName( 'define', false ), [ $this, 'actionDefine' ] );
+			add_action( $this->Settings->getHookName( 'submit', false ), [ $this, 'actionSubmit' ] );
+		}
+
+		$this->ready = true;
 	}
 
 	/**
 	 * Tool: Define.
 	 */
-	public static function actionDefine(): void
+	public function actionDefine(): void
 	{
-		static::$Factory->Asset()->enqueue( 'css/inputs.css' );
+		$this->Plugin->enqueue( 'css/inputs.css' );
 	}
 
 	/**
@@ -104,14 +93,14 @@ class Tools
 	 * NOTE:
 	 * Submit action does NOT redirect to render page url
 	 */
-	public static function actionSubmit(): void
+	public function actionSubmit(): void
 	{
-		$data = static::postData();
+		$data = $this->postData();
 		ksort( $data );
 		$html = trim( Input::escHtml( print_r( $data, true ) ) );
 
-		static::$Settings->adminNotice( 'Submit', 'OK', [ 'type' => 'success' ] );
-		static::$Settings->adminNotice( 'Submit', <<<HTML
+		$this->Settings->adminNotice( 'Submit', 'OK', [ 'type' => 'success' ] );
+		$this->Settings->adminNotice( 'Submit', <<<HTML
 			<a href="javascript:;" onClick="jQuery('#submit_toogle').toggle();return false;">POST</a>
 			<pre id="submit_toogle" style="display:none">$html</pre>
 			HTML );
@@ -121,20 +110,17 @@ class Tools
 	 * Get inputs.
 	 * No need for cache since PHP caches all require() per request :)
 	 */
-	protected static function getInputFields(): array
+	protected function getInputFields(): array
 	{
-		$fields = require static::$Factory->get( 'config_dir' ) . sprintf( '/tools_%s_inputs.php', static::NAME );
+		$fields = require $this->Factory->get( 'plu_config_dir' ) . sprintf( '/tools_%s_inputs.php', static::NAME );
 		Input::fieldsPrepare( $fields );
 		return $fields;
 	}
 
 	/**
 	 * Get Tool submitted FORM data.
-	 *
-	 * NOTE:
-	 * @see Tools::cookieGet()
 	 */
-	protected static function postData(): array
+	protected function postData(): array
 	{
 		static $data;
 		return $data ?? $data = array_map( 'stripslashes_deep', $_POST );
@@ -146,13 +132,13 @@ class Tools
 	 * NOTE:
 	 * Always use this method to retrive cookie data in derived Tool.
 	 * This will prevent double calling stripslashes() on data stored in onSubmit event
-	 * @see Tools::cookieSaveHistory()
+	 * @see Tools::cookieSave()
 	 *
 	 * CAUTION:
 	 * WordPress adds slashes to $_POST/$_GET/$_REQUEST/$_COOKIE regardless of what get_magic_quotes_gpc() returns
 	 * @link https://developer.wordpress.org/reference/functions/stripslashes_deep/
 	 */
-	protected static function cookieData(): array
+	protected function cookieData(): array
 	{
 		static $data;
 		return $data ?? $data = array_map( 'stripslashes_deep', $_COOKIE[static::NAME] ?? []);
@@ -161,7 +147,7 @@ class Tools
 	/**
 	 * Get default cookie args.
 	 */
-	protected static function cookieCfg( bool $delete = false ): array
+	protected function cookieCfg( bool $delete = false ): array
 	{
 		/* @formatter:off */
 		return [
@@ -178,17 +164,17 @@ class Tools
 	 * [reset]   => (boolean) Allow cookie reset for this field (def. POST[reset] )
 	 * [history] => (int)     Number of previous values in attr[defval] (def. static::MAX_HISTORY )
 	 */
-	protected static function cookieSave(): void
+	protected function cookieSave(): void
 	{
-		if ( !$post = static::postData() ) {
+		if ( !$post = $this->postData() ) {
 			return;
 		}
 
 		$fields = static::getInputFields();
 		$reset = $post['reset'] ?? false;
-		$cookieUser = static::cookieCfg( $reset );
-		$cookieKeep = static::cookieCfg();
-		$cookieData = static::cookieData();
+		$cookieUser = $this->cookieCfg( $reset );
+		$cookieKeep = $this->cookieCfg();
+		$cookieData = $this->cookieData();
 
 		foreach ( Input::fieldsEach( $fields, true ) as $field ) {
 			$Input = new Input( $field, $post );
@@ -228,12 +214,16 @@ class Tools
 	/**
 	 * Render submit FORM.
 	 */
-	protected static function renderForm( Inputs $Inputs, $cfg = [] ): void
+	protected function renderForm( Inputs $Inputs, $cfg = [] ): void
 	{
 		/* @formatter:off */
-		echo strtr( '<form method="post" name="{name}" action="{action}">', [
+		echo strtr( <<<HTML
+			<form method="post" name="{name}" action="{action}">
+			{nonce}
+			HTML, [
 			'{name}'   => static::NAME,
 			'{action}' => $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING'],
+			'{nonce}'  => $this->Settings->formNonceInput(),
 		]);
 		/* @formatter:on */
 

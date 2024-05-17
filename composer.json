@@ -7,12 +7,12 @@
 		{
 			"name": "Orkan",
 			"role": "Lead",
-			"email": "orkans+new@gmail.com"
+			"email": "orkans+wpbase@gmail.com"
 		}
 	],
 	"require": {
 		"erusev/parsedown": "^1.7",
-		"orkan/utils": "^9.0"
+		"orkan/utils": "^9"
 	},
 	"require-dev": {
 		"matthiasmullie/minify": "^1.3"
@@ -28,7 +28,6 @@
 		}
 	},
 	"config": {
-		"vendor-dir": "vendor",
 		"optimize-autoloader": false,
 		"sort-packages": true,
 		"allow-plugins": {
@@ -37,12 +36,19 @@
 	},
 	"extra": {
 		"ork-base": {
-			"factory-ns": "Orkan\\WP\\Base\\Factory",
-			"wp-config": "/../html/wp-config.php"
+			"wp-config": "html/wp-config.php"
+		},
+		"installer-paths": {
+			"html/wp-content/plugins/{$name}": [
+				"type:wordpress-plugin"
+			],
+			"html/wp-content/themes/{$name}": [
+				"type:wordpress-theme"
+			]
 		},
 		"branch-alias": {
-			"dev-master": "1.0.x-dev",
-			"dev-develop": "1.x-dev"
+			"dev-master": "2.0.x-dev",
+			"dev-develop": "2.x-dev"
 		}
 	}
 }

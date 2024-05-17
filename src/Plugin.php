@@ -15,46 +15,43 @@ use Orkan\Utils;
 class Plugin
 {
 	const NAME = 'Ork Base';
-	const VERSION = '1.0.2';
+	const VERSION = '2.0.0';
 
 	/**
-	 * Error codes.
+	 * Location to current entry point plugin file loaded by WP.
+	 * @see wp-settings.php,424
 	 */
-	const AJAX_ERROR = 400; // HTTP Bad Request
-
-	/* @formatter:off */
+	protected $plugin;
 
 	/**
-	 * Custom nonces.
+	 * Connected?
 	 */
-	const NONCE = [
-		'form'  => [ 'name' => 'ork_nonce', 'action' => 'ork_form_submit' ],
-		'ajax'  => [ 'name' => 'nonce'    , 'action' => 'ork_ajax_action' ],
-	];
-
-	/* @formatter:on */
+	private $ready = false;
 
 	/**
-	 * @var Factory
+	 * Services:
 	 */
-	protected static $Factory;
+	protected $Factory;
 
 	/**
 	 * Setup.
 	 */
 	public function __construct( Factory $Factory )
 	{
-		static::$Factory = $Factory;
+		$this->Factory = $Factory;
+		$this->plugin = $GLOBALS['plugin'] ?? '';
+
+		if ( !$this->plugin ) {
+			throw new \InvalidArgumentException( 'Missing $GLOBALS[plugin] var!' );
+		}
 	}
 
 	/**
 	 * Run plugin.
 	 */
-	public static function run(): void
+	public function run(): void
 	{
-		static $ready;
-
-		if ( isset( $ready ) ) {
+		if ( $this->ready ) {
 			return;
 		}
 
@@ -67,23 +64,22 @@ class Plugin
 			return;
 		}
 
-		static::$Factory->merge( self::defaults() );
+		$this->Factory->merge( self::defaults() );
 
 		// In STANDALONE mode WP environment isn't available (WPINC == false)
 		if ( defined( 'WPINC' ) ) {
-
 			if ( is_admin() ) {
-				$pl = static::$Factory->get( 'basename' );
-				add_action( "activate_$pl", [ static::class, 'actionActivate' ] );
-				add_action( "deactivate_$pl", [ static::class, 'actionDeactivate' ] );
-				add_action( 'admin_enqueue_scripts', [ static::class, 'actionAdminEnqueueScripts' ] );
+				$pl = $this->Factory->get( 'plu_basename' );
+				add_action( "activate_$pl", [ $this, 'actionActivate' ] );
+				add_action( "deactivate_$pl", [ $this, 'actionDeactivate' ] );
+				add_action( 'admin_enqueue_scripts', [ $this, 'actionAdminEnqueueScripts' ] );
 			}
 		}
 
-		$ready = true;
+		$this->ready = true;
 	}
 
-	/*
+	/**
 	 * Configure plugin.
 	 *
 	 * NOTE:
@@ -93,55 +89,92 @@ class Plugin
 	 * @see plugin_basename()
 	 * @see plugins_url()
 	 */
-	private static function defaults(): array
+	private function defaults(): array
 	{
-		$Reflector = new \ReflectionClass( static::class );
-		$classFile = $Reflector->getFileName();
-
+		$info = pathinfo( $this->plugin );
 		$host = defined( 'WP_SITEURL' ) ? WP_SITEURL : get_site_url();
 		$plug = substr( WP_PLUGIN_DIR, strlen( ABSPATH ) ); // plugins dir path @see plugin_basename()
-		$base = basename( dirname( $classFile, 2 ) ); // plugin dir name
+		$base = basename( $info['dirname'] ); // plugin dir name
 		$path = $plug . '/' . $base; // plugin dir path
-		$cfg = [];
 
-		// Plugin name. Register plugin pages, etc...
-		$cfg['name'] = static::NAME;
-
-		// Plugin version.
-		$cfg['version'] = static::VERSION;
-
-		// Check wether the plugin is in DEV (SRC) / PROD (REL) environment
-		$cfg['debug'] = static::VERSION === '@' . 'Version@';
-
-		// Premium version?
-		$cfg['premium'] = true;
-
-		// Used to identify the plugin, eg. plugin_dir/plugin.php
-		$cfg['basename'] = $base . '/plugin.php';
-
-		// Plugin dir from root, eg. wp-content/plugins/{plugin}
-		$cfg['plugin_loc'] = $path;
-
-		// Assets: wp-content/plugins/{plugin}/assets
-		$cfg['assets_loc'] = $path . '/assets';
-
-		// Plugin dir absolute path, eg. /var/www/html/wp-content/plugins/{plugin}
-		$cfg['plugin_dir'] = ABSPATH . $path;
-
-		// Configs: /var/www/html/wp-content/plugins/{plugin}/config
-		$cfg['config_dir'] = ABSPATH . $path . '/config';
-
-		// Plugin dir url, eg. http://example.com/wp-content/plugins/{plugin}
-		$cfg['plugin_url'] = $host . '/' . $path;
-
-		return $cfg;
+		/*
+		 * [plu_basename]
+		 * Used to identify the plugin, eg. plugin_dir/plugin.php
+		 *
+		 * [plu_plugin_loc]
+		 * Plugin dir from root, eg. wp-content/plugins/{plugin}
+		 *
+		 * [plu_assets_loc]
+		 * Assets: wp-content/plugins/{plugin}/assets
+		 *
+		 * [plu_plugin_dir]
+		 * Plugin dir absolute path, eg. /var/www/html/wp-content/plugins/{plugin}
+		 *
+		 * [plu_config_dir]
+		 * Configs: /var/www/html/wp-content/plugins/{plugin}/config
+		 *
+		 * [plu_plugin_url]
+		 * Plugin dir url, eg. http://example.com/wp-content/plugins/{plugin}
+		 *
+		 * [plu_ajax_error]
+		 * Ajax error code. Def. [400] HTTP Bad Request
+		 *
+		 * [plu_ajax_nonce_name]
+		 * Plugin unique nonce name to be used in GET/POST param
+		 *
+		 * [plu_ajax_nonce_action]
+		 * WP can generate different nonces for different actions
+		 *
+		 * [plu_name]
+		 * Ueed in:
+		 * - Dashboard > Settings
+		 * - Transients label
+		 *
+		 * [plu_version]
+		 * Ueed in: Assets
+		 *
+		 * [plu_slug]
+		 * Used to generate plugin unique key identifiers
+		 *
+		 * [plu_debug]
+		 * Is development version?
+		 * Ueed in: ?
+		 *
+		 * [plu_premium]
+		 * Used in: Settings page: replace inputs[premium] with <span>
+		 *
+		 * [plu_js_var]
+		 * JS global variable name holding enqueued JS object
+		 *
+		 * @formatter:off */
+		return [
+			// Paths
+			'plu_basename'   => $base . '/' . $info['basename'],
+			'plu_plugin_loc' => $path,
+			'plu_assets_loc' => $path . '/assets',
+			'plu_plugin_dir' => ABSPATH . $path,
+			'plu_config_dir' => ABSPATH . $path . '/config',
+			'plu_plugin_url' => $host . '/' . $path,
+			// Ajax
+			'plu_ajax_error'        => 400,
+			'plu_ajax_nonce_name'   => 'nonce',
+			'plu_ajax_nonce_action' => 'ork_ajax_action',
+			// Other
+			'plu_name'       => static::NAME,
+			'plu_version'    => static::VERSION,
+			'plu_slug'       => $base,
+			'plu_debug'      => static::VERSION === '@' . 'Version@',
+			'plu_premium'    => true,
+			'plu_js_var'     => 'ork',
+		];
+		/* @formatter:on */
 	}
 
 	/**
 	 * Activate plugin.
 	 * @link https://developer.wordpress.org/plugins/plugin-basics/activation-deactivation-hooks/
 	 */
-	public static function actionActivate(): void
+	public function actionActivate(): void
 	{
 	}
 
@@ -149,13 +182,65 @@ class Plugin
 	 * Deactivate plugin.
 	 * @link https://developer.wordpress.org/plugins/plugin-basics/activation-deactivation-hooks/
 	 */
-	public static function actionDeactivate(): void
+	public function actionDeactivate(): void
 	{
 	}
 
-	public static function actionAdminEnqueueScripts( $page ): void
+	public function actionAdminEnqueueScripts( $page ): void
 	{
 		wp_add_inline_script( 'jquery-migrate', 'jQuery.migrateMute=true;jQuery.migrateTrace=false;', 'before' );
+	}
+
+	/**
+	 * Enqueue JS/CSS assets.
+	 *
+	 * @see hook: admin_enqueue_scripts
+	 * @see wp_enqueue_script()
+	 * @see wp_add_inline_script()
+	 * @see wp_localize_script()
+	 * @see wp_register_script()
+	 * @see wp_add_inline_script()
+	 * @see wp_script_is() - Determines whether a script has been enqueued
+	 *
+	 * @throws \LogicException Prevent double enqueues
+
+	 * @param string $asset   Path to asset relative to cfg[assets] dir, eg. 'js/main.js'
+	 * @param array  $deps    Dependencies. Without -js, -css sufixes
+	 * @param string $data    [JS only] Inline script or array that will be converted to object: window.ork = {data}
+	 * @param array  $options [CSS/JS] Extra options
+	 */
+	public function enqueue( string $asset, array $deps = [], $data = '', array $options = [] ): void
+	{
+		$Settings = $this->Factory->Settings();
+		$Asset = $this->Factory->Asset();
+
+		$info = $Asset->info( $asset );
+
+		foreach ( $Asset->stats( 'rebuild' ) as $path ) {
+			$Settings->adminNotice( 'Rebuild', sprintf( '<a href="%s">%s</a>', $path, basename( $path ) ) );
+		}
+
+		/* @formatter:off */
+		$args = array_merge( $options, [
+			'footer'   => true,
+			'position' => 'before',
+			'media'    => 'all',
+		]);
+		/* @formatter:on */
+
+		if ( 'css' === $info['dirname'] ) {
+			wp_enqueue_style( $info['handle'], $info['location'], $deps, $info['version'], $args['media'] );
+		}
+		else {
+			wp_enqueue_script( $info['handle'], $info['location'], $deps, $info['version'], $args['footer'] );
+
+			if ( $data ) {
+				if ( is_array( $data ) ) {
+					$data = sprintf( 'var %s = %s', $this->Factory->get( 'plu_js_var' ), json_encode( $data ) ); // maybe JSON_FORCE_OBJECT
+				}
+				wp_add_inline_script( $info['handle'], $data, $args['position'] );
+			}
+		}
 	}
 
 	/**
@@ -167,19 +252,24 @@ class Plugin
 	 *
 	 * @throws \Exception On invalid nonce
 	 */
-	public static function ajaxCheckNonce(): void
+	public function ajaxNonceCheck(): void
 	{
-		if ( false === check_ajax_referer( static::NONCE['ajax']['action'], static::NONCE['ajax']['name'], false ) ) {
-			throw new \Exception( 'Link expired', static::AJAX_ERROR );
+		$name = $this->Factory->get( 'plu_ajax_nonce_name' );
+		$action = $this->Factory->get( 'plu_ajax_nonce_action' );
+
+		if ( false === check_ajax_referer( $action, $name, false ) ) {
+			throw new \InvalidArgumentException( 'Link expired', $this->Factory->get( 'plu_ajax_error' ) );
 		}
 	}
 
 	/**
+	 * Handle Ajax errors & exceptions.
+	 *
 	 * @see wp_json_encode() -> return string
 	 * @see wp_send_json() -> header + wp_die()
 	 * @see wp_send_json_error() -> wp_die()
 	 */
-	public static function ajaxSetExceptionHandler(): void
+	public function ajaxExceptionHandle(): void
 	{
 		// Turn Errors into Exceptions
 		set_error_handler( [ Utils::class, 'errorHandler' ] );

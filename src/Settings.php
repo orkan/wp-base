@@ -6,7 +6,6 @@
 namespace Orkan\WP\Base;
 
 use Orkan\Input;
-use Parsedown;
 
 /**
  * Plugin: Settings.
@@ -16,52 +15,36 @@ use Parsedown;
 class Settings
 {
 	/**
-	 * Settings page slug.
+	 * Unserialized DB options (short time cache).
+	 * @see Settings::getOption()
 	 */
-	const OPTIONS_PAGE = 'ork-settings';
+	protected $options;
 
 	/**
-	 * Settings DB key and Actions prefix.
+	 * Admin notices queue.
+	 * @see Settings::adminNotice()
 	 */
-	const OPTIONS_NAME = 'ork_settings';
-
-	/**
-	 * WP options DB table.
-	 */
-	const CACHE_PREFIX = 'ork_cache_';
-
-	/**
-	 * Short-live memory cache key.
-	 */
-	const TRANSIENT_PREFIX = 'ork_transcient_';
+	protected $notices = [];
 
 	/* @formatter:off */
 
 	/**
-	 * Transient messages.
-	 * @see Settings::adminTransient()
-	 */
-	protected const TRANSIENTS = [
-		'activate' => 'Please open {link} page to finish plugin activation!',
-	];
-
-	/**
-	 * Ajax actions.
+	 * Registered Ajax actions.
 	 * @var array (
-	 *   [id] => "action" used in add_action() as "wp_ajax_{action}" -or- "wp_ajax_nopriv_{action}"
+	 *   [key] => "action" used in add_action() as "wp_ajax_{action}" -or- "wp_ajax_nopriv_{action}"
 	 *   ...
 	 * )
 	 */
-	const ACTION = [];
+	protected $ajaxActions = [];
 
 	/**
-	 * Cache keys.
-	 * String used to create DB option name, internaly prefixed with:
-	 * @see Settings::CACHE_PREFIX
+	 * Index of all cache keys used to store data in DB.
+	 * Makes it easier to manage all the data cached in DB from one place!
+	 * Internaly prefixed with cfg[stt_cache_prefix]
+	 * @see Settings::cacheFlush()
+	 * @see Settings::cacheDeleteAll()
 	 */
-	protected const CACHE = [
-		'settings' => self::OPTIONS_NAME . '_inputs',
-	];
+	protected $cacheKeys = [];
 
 	/**
 	 * Action links.
@@ -79,87 +62,121 @@ class Settings
 	 * [menu]  => Add action link in Plugin Row Meta
 	 * )
 	 */
-	protected static $tools = [
+	protected $tools = [
 		'settings'   => [ 'title' => 'Settings'    , 'icon' => 'admin-generic'    , 'menu' => false ],
 		'readme'     => [ 'title' => 'README'      , 'icon' => 'book'             , 'menu' => true  ],
 		'config'     => [ 'title' => 'Config'      , 'icon' => 'info-outline'     , 'menu' => true  ],
 	];
 
+	/**
+	 * Transient messages.
+	 * @see Settings::adminTransient()
+	 */
+	protected $transients = [];
+
 	/* @formatter:on */
 
 	/**
-	 * @see Settings::adminNotice()
+	 * Connected?
 	 */
-	protected static $adminNotices = [];
+	private $ready = false;
 
 	/**
-	 * @var Factory
+	 * Services:
 	 */
-	protected static $Factory;
-
-	/**
-	 * @var Plugin
-	 */
-	protected static $Plugin;
+	protected $Factory;
+	protected $Plugin;
 
 	/**
 	 * Setup.
 	 */
 	public function __construct( Factory $Factory )
 	{
-		static::$Factory = $Factory;
-		static::$Plugin = $Factory->Plugin();
+		$this->Factory = $Factory;
+		$this->Plugin = $Factory->Plugin();
+
+		$this->Factory->merge( self::defaults() );
 	}
 
 	/**
 	 * Register all hooks.
 	 */
-	public static function run(): void
+	public function run(): void
 	{
-		static $ready;
-
-		if ( $ready ) {
+		if ( $this->ready ) {
 			return;
 		}
+
+		$this->cacheRegister( 'settings_inputs' );
 
 		$isAjax = wp_doing_ajax();
 		$isPage = !$isAjax && is_admin();
 
-		if ( $isAjax && in_array( $_REQUEST['action'], static::ACTION ) ) {
-			static::$Plugin->ajaxSetExceptionHandler();
+		if ( $isAjax && in_array( $_REQUEST['action'], $this->ajaxActions ) ) {
+			$this->Plugin->ajaxExceptionHandle();
 		}
 		elseif ( $isPage ) {
-			add_action( 'admin_init', [ static::class, 'actionAdminInit' ] );
-			add_action( 'admin_menu', [ static::class, 'actionAdminMenu' ] );
+			add_action( 'admin_init', [ $this, 'actionAdminInit' ] );
+			add_action( 'admin_menu', [ $this, 'actionAdminMenu' ] );
 
 			// Tools
-			$pl = static::$Factory->get( 'basename' );
-			$hook = static::OPTIONS_NAME;
-			add_action( "activate_$pl", [ static::class, 'actionActivate' ] );
-			add_action( "deactivate_$pl", [ static::class, 'actionDeactivate' ] );
-			add_action( 'admin_notices', [ static::class, 'actionAdminNotices' ] );
-			add_action( 'plugin_row_meta', [ static::class, 'actionPluginRowMeta' ], 10, 2 );
-			add_filter( "plugin_action_links_$pl", [ static::class, 'filterActionLinks' ] );
-			add_filter( $hook . '_inputs', [ static::class, 'filterInputFields' ] );
-			add_action( $hook . '_submit_settings', [ static::class, 'actionSubmitSettings' ] );
-			add_action( $hook . '_define_settings', [ static::class, 'actionDefineSettings' ], 555 );
-			add_action( $hook . '_render_settings', [ static::class, 'actionRenderSettings' ] );
-			add_action( $hook . '_render_upgrade', [ static::class, 'actionRenderUpgrade' ] );
-			add_action( $hook . '_render_readme', [ static::class, 'actionRenderReadme' ] );
-			add_action( $hook . '_render_develop', [ static::class, 'actionRenderDevelop' ] );
-			add_action( $hook . '_render_config', [ static::class, 'actionRenderConfig' ] );
+			$pl = $this->Factory->get( 'plu_basename' );
+			$hook = $this->Factory->get( 'stt_options_name' );
+			add_action( "activate_$pl", [ $this, 'actionActivate' ] );
+			add_action( "deactivate_$pl", [ $this, 'actionDeactivate' ] );
+			add_action( 'admin_notices', [ $this, 'actionAdminNotices' ] );
+			add_action( 'plugin_row_meta', [ $this, 'actionPluginRowMeta' ], 10, 2 );
+			add_filter( "plugin_action_links_$pl", [ $this, 'filterActionLinks' ] );
+			add_filter( $hook . '_inputs', [ $this, 'filterInputFields' ] );
+			add_action( $hook . '_submit_settings', [ $this, 'actionSubmitSettings' ] );
+			add_action( $hook . '_define_settings', [ $this, 'actionDefineSettings' ], 555 );
+			add_action( $hook . '_render_settings', [ $this, 'actionRenderSettings' ] );
+			add_action( $hook . '_render_readme', [ $this, 'actionRenderReadme' ] );
+			add_action( $hook . '_render_config', [ $this, 'actionRenderConfig' ] );
 		}
 
-		$ready = true;
+		$this->ready = true;
 	}
 
 	/**
 	 * Get defaults.
 	 */
-	private static function defaults(): array
+	private function defaults(): array
 	{
-		/* @formatter:off */
+		$slug = $this->Factory->get( 'plu_slug' );
+
+		/**
+		 * [stt_options_page]
+		 * Settings page URL slug
+		 *
+		 * [stt_options_name]
+		 * Used in:
+		 * - Settings options DB key
+		 * - Settings and Tool actions
+		 * - FORM input name space: options_name[input-name]
+		 * Prefix for:
+		 * - apply_filters(FORM inputs)
+		 *
+		 * [stt_cache_prefix]
+		 * Prefix for: DB cache
+		 *
+		 * [stt_transient_prefix]
+		 * Prefix for: Transients messages
+		 *
+		 * [stt_form_nonce_name]
+		 * [stt_form_nonce_action]
+		 * Settings page FORM nonce
+		 * @see Settings::formCheckNonce()
+		 *
+		 * @formatter:off */
 		return [
+			'stt_options_page'     => "ork-settings-{$slug}",
+			'stt_options_name'     => "ork_settings_{$slug}",
+			'stt_cache_prefix'     => "ork_cache_{$slug}_",
+			'stt_transient_prefix' => "ork_transcient_{$slug}_",
+			// Forms
+			'stt_form_nonce_name'   => 'ork_nonce',
+			'stt_form_nonce_action' => 'ork_form_submit',
 		];
 		/* @formatter:on */
 	}
@@ -167,26 +184,26 @@ class Settings
 	/**
 	 * Show label in Dashboard > Settings menu and define render page callback.
 	 */
-	public static function actionAdminMenu(): void
+	public function actionAdminMenu(): void
 	{
-		$label = static::$Factory->get( 'name' );
-		add_options_page( $label, $label, 'manage_options', static::OPTIONS_PAGE, [ static::class, 'actionRender' ] );
+		$label = $this->Factory->get( 'plu_name' );
+		$page = $this->Factory->get( 'stt_options_page' );
+		add_options_page( $label, $label, 'manage_options', $page, [ $this, 'actionRender' ] );
 	}
 
 	/**
 	 * Activate plugin.
 	 */
-	public static function actionActivate()
+	public function actionActivate()
 	{
-		static::adminTransient( 'activate', [ 'tokens' => [ '{link}' => static::toolLink( 'settings' ) ] ] );
 	}
 
 	/**
 	 * Deactivate plugin.
 	 */
-	public static function actionDeactivate()
+	public function actionDeactivate()
 	{
-		static::cacheFlush();
+		$this->cacheFlush();
 	}
 
 	/**
@@ -202,24 +219,24 @@ class Settings
 	 * Hooks - render:
 	 * @see Settings::actionRender()
 	 */
-	public static function actionAdminInit(): void
+	public function actionAdminInit(): void
 	{
-		if ( static::isSettingsSubmit() ) {
-			do_action( static::getHookName( 'submit' ) ); // Current Action: 'settings' !
+		if ( $this->isSettingsSubmit() ) {
+			do_action( $this->getHookName( 'submit' ) ); // Current Action: 'settings' !
 		}
-		elseif ( static::isSettingsRender() ) {
-			do_action( static::getHookName( 'define' ) );
+		elseif ( $this->isSettingsRender() ) {
+			do_action( $this->getHookName( 'define' ) );
 		}
-		elseif ( static::isToolRender() ) {
+		elseif ( $this->isToolRender() ) {
 
-			if ( static::isToolSubmit() ) {
-				do_action( static::getHookName( 'submit', false ) ); // All Actions
-				do_action( static::getHookName( 'submit' ) ); // Current Actions
+			if ( $this->isToolSubmit() ) {
+				do_action( $this->getHookName( 'submit', false ) ); // All Actions
+				do_action( $this->getHookName( 'submit' ) ); // Current Actions
 			}
 
 			// Always call 'define' hook on Action pages, since FORM url === Page url
-			do_action( static::getHookName( 'define', false ) );
-			do_action( static::getHookName( 'define' ) );
+			do_action( $this->getHookName( 'define', false ) );
+			do_action( $this->getHookName( 'define' ) );
 		}
 	}
 
@@ -238,25 +255,25 @@ class Settings
 	 * Hooks - submit, define:
 	 * @see Settings::actionAdminInit()
 	 */
-	public static function actionRender()
+	public function actionRender()
 	{
 		echo '<div id="ork-settings-actionRender">';
-		echo static::toolHeader();
-		do_action( static::getHookName( 'render' ) );
+		echo $this->toolHeader();
+		do_action( $this->getHookName( 'render' ) );
 		echo '</div>';
 	}
 
 	/**
 	 * Is Settings page - render?
 	 */
-	public static function isSettingsRender()
+	public function isSettingsRender()
 	{
 		$pagenow = basename( $_SERVER['PHP_SELF'] );
 		$page = $_GET['page'] ?? '';
 		$action = $_GET['action'] ?? 'settings';
 
 		$result = 'options-general.php' === $pagenow;
-		$result &= static::OPTIONS_PAGE === $page;
+		$result &= $this->Factory->get( 'stt_options_page' ) === $page;
 		$result &= 'settings' === $action;
 
 		return $result;
@@ -268,14 +285,14 @@ class Settings
 	 * CAUTION:
 	 * Submit <FORM action="options.php"> !== Page URL: "options-general.php"
 	 */
-	public static function isSettingsSubmit()
+	public function isSettingsSubmit()
 	{
 		$pagenow = basename( $_SERVER['PHP_SELF'] );
 		$page = $_POST['option_page'] ?? '';
 		$action = $_POST['action'] ?? '';
 
 		$result = 'options.php' === $pagenow;
-		$result &= static::OPTIONS_PAGE === $page;
+		$result &= $this->Factory->get( 'stt_options_page' ) === $page;
 		$result &= 'update' === $action;
 
 		return $result;
@@ -287,15 +304,19 @@ class Settings
 	 * CAUTION:
 	 * That includes 'submit' action too, since the FORM action url is the same
 	 */
-	public static function isToolRender()
+	public function isToolRender( string $currentAction = '' ): bool
 	{
 		$pagenow = basename( $_SERVER['PHP_SELF'] );
-		$page = $_GET['page'] ?? '';
-		$action = $_GET['action'] ?? '';
+		$page = $_GET['page'] ?? null;
+		$action = $_GET['action'] ?? null;
 
 		$result = 'options-general.php' === $pagenow;
-		$result &= static::OPTIONS_PAGE === $page;
-		$result &= isset( static::$tools[$action] );
+		$result &= $this->Factory->get( 'stt_options_page' ) === $page;
+		$result &= isset( $action );
+
+		if ( $currentAction ) {
+			$result &= $action === $currentAction;
+		}
 
 		return $result;
 	}
@@ -306,7 +327,7 @@ class Settings
 	 * CAUTION:
 	 * Submit <FORM action="options-general.php"> === Page URL: "options-general.php"
 	 */
-	public static function isToolSubmit()
+	public function isToolSubmit(): bool
 	{
 		$result = self::isToolRender();
 		$result &= 'POST' === $_SERVER['REQUEST_METHOD'];
@@ -324,19 +345,19 @@ class Settings
 	 * ork_settings_submit_settings (submit, action: settings)
 	 * etc...
 	 */
-	public static function getHookName( string $type, bool $withAction = true ): string
+	public function getHookName( string $type, bool $withAction = true ): string
 	{
-		$action = $withAction ? '_' . static::getAction() : '';
-		return static::OPTIONS_NAME . '_' . $type . $action;
+		$action = $withAction ? '_' . $this->getAction() : '';
+		return $this->Factory->get( 'stt_options_name' ) . '_' . $type . $action;
 	}
 
 	/**
 	 * Get current Action name.
 	 */
-	public static function getAction(): string
+	public function getAction(): string
 	{
 		$action = $_GET['action'] ?? '';
-		return isset( static::$tools[$action] ) ? $action : 'settings';
+		return isset( $this->tools[$action] ) ? $action : 'settings';
 	}
 
 	/**
@@ -350,12 +371,12 @@ class Settings
 	 *                       'inactive', 'recently_activated', 'upgrade', 'mustuse', 'dropins', 'search', 'paused',
 	 *                       'auto-update-enabled', 'auto-update-disabled'
 	 */
-	public static function actionPluginRowMeta( array $links, string $file ): array
+	public function actionPluginRowMeta( array $links, string $file ): array
 	{
-		if ( $file === static::$Factory->get( 'basename' ) ) {
-			foreach ( static::$tools as $k => $v ) {
+		if ( $file === $this->Factory->get( 'plu_basename' ) ) {
+			foreach ( $this->tools as $k => $v ) {
 				if ( $v['menu'] ) {
-					$links[] = static::toolLink( $k, true );
+					$links[] = $this->toolLink( $k, true );
 				}
 			}
 		}
@@ -366,49 +387,49 @@ class Settings
 	/**
 	 * Register new tool.
 	 */
-	public static function toolRegister( $id, $title, $icon, $menu ): void
+	public function toolRegister( $id, $title, $icon, $menu ): void
 	{
-		static::$tools[$id] = [ 'title' => $title, 'icon' => $icon, 'menu' => $menu ];
+		$this->tools[$id] = [ 'title' => $title, 'icon' => $icon, 'menu' => $menu ];
 	}
 
 	/**
 	 * Settings page - init.
 	 */
-	public static function actionDefineSettings(): void
+	public function actionDefineSettings(): void
 	{
-		//$Asset->enqueue( 'css/.css' ); // Settings::form() -> $isRender
+		//enqueue() moved to Settings::form() -> isRender()
 	}
 
 	/**
 	 * Register FORM fields.
 	 */
-	protected static function formRegister(): void
+	protected function formRegister(): void
 	{
 		// Refresh DB cache
-		static::cacheFlush();
+		$this->cacheFlush();
 
 		try {
 			// Register FORM fields so they can be auto-rendered
-			static::form();
+			$this->form();
 		}
 		catch ( \Throwable $E ) {
 			error_log( $E );
-			static::adminNotice( 'FORM register', $E->getMessage(), [ 'type' => 'error' ] );
+			$this->adminNotice( 'FORM register', $E->getMessage(), [ 'type' => 'error' ] );
 		}
 	}
 
 	/**
 	 * Register FORM inputs.
 	 */
-	protected static function formRender(): void
+	protected function formRender(): void
 	{
 		// Echo all notices gathered during page construct. Note, this action is after the 'admin_notices' hook!
-		echo static::adminNotices();
+		echo $this->adminNotices();
 
 		echo '<form method="post" action="options.php">';
 		submit_button();
-		settings_fields( static::OPTIONS_PAGE );
-		do_settings_sections( static::OPTIONS_PAGE );
+		settings_fields( $this->Factory->get( 'stt_options_page' ) );
+		do_settings_sections( $this->Factory->get( 'stt_options_page' ) );
 		submit_button();
 		echo '</form>';
 	}
@@ -419,10 +440,10 @@ class Settings
 	 * @see add_options_page()
 	 * @see Settings::actionAdminMenu()
 	 */
-	public static function actionRenderSettings(): void
+	public function actionRenderSettings(): void
 	{
-		static::formRegister();
-		static::formRender();
+		$this->formRegister();
+		$this->formRender();
 	}
 
 	/**
@@ -431,16 +452,16 @@ class Settings
 	 * NOTE:
 	 * The $_POST[] values aint saved in DB yet!
 	 */
-	public static function actionSubmitSettings(): void
+	public function actionSubmitSettings(): void
 	{
 		// Register FORM inputs so they can be auto-saved
-		static::form();
+		$this->form();
 
 	/**
 	 * -------------------------------------------------------------------------------------------------------------
 	 * Refresh DB cache.
 	 * @see Settings::actionRenderSettings()
-	 * static::flushCache();
+	 * $this->flushCache();
 	 */
 	}
 
@@ -457,24 +478,45 @@ class Settings
 	 *
 	 * @see wp_cache_add()
 	 */
-	protected static function cacheId( string $key ): string
+	protected function cacheId( string $key ): string
 	{
-		return static::CACHE_PREFIX . $key;
+		$id = $this->cacheKeys[$key] ?? null;
+
+		if ( !$id ) {
+			throw new \RuntimeException( <<<EOT
+				Cache key "$key" not defined! 
+				Use Settings::cacheRegister(key => id) before calling cache methods.
+				EOT );
+		}
+
+		return $this->Factory->get( 'stt_cache_prefix' ) . $id;
 	}
 
-	public static function cacheGet( ?string $key = null, ?array $default = null ): ?array
+	public function cacheRegister( string $key, string $id = '' )
 	{
-		return $key ? get_option( static::cacheId( $key ), $default ) : null; // unserialize
+		if ( isset( $this->cacheKeys[$key] ) ) {
+			throw new \RuntimeException( <<<EOT
+				Cache key "$key" already defined! 
+				EOT );
+		}
+
+		$this->cacheKeys[$key] = $id ?: $key;
+		return true;
 	}
 
-	public static function cacheSet( ?string $key = null, array $data, bool $autoload = false ): bool
+	public function cacheGet( string $key, $default = null )
 	{
-		return $key ? update_option( static::cacheId( $key ), $data, $autoload ) : false; // serialize
+		return get_option( $this->cacheId( $key ), $default );
 	}
 
-	public static function cacheDelete( ?string $key = null ): bool
+	public function cacheSet( string $key, $data, bool $autoload = false ): bool
 	{
-		return $key ? delete_option( static::cacheId( $key ) ) : false;
+		return update_option( $this->cacheId( $key ), $data, $autoload );
+	}
+
+	public function cacheDelete( string $key ): bool
+	{
+		return delete_option( $this->cacheId( $key ) );
 	}
 
 	/**
@@ -491,28 +533,32 @@ class Settings
 	 * @see get_option('rewrite_rules')
 	 * @see flush_rewrite_rules()
 	 *
-	 * @param string|array $ids Previously used to cacheSet()
+	 * @param string|array $keys Previously used to cacheSet()
 	 */
-	public static function cacheDeleteAll( $ids ): void
+	public function cacheDeleteAll( $keys ): int
 	{
-		foreach ( (array) $ids as $id ) {
-			$result = static::cacheDelete( $id );
-			$result && static::adminNotice( 'Flush', static::cacheId( $id ) );
+		$items = 0;
+		foreach ( (array) $keys as $key ) {
+			if ( $this->cacheDelete( $key ) ) {
+				$this->adminNotice( 'Flush', $this->cacheId( $key ) );
+				$items++;
+			}
 		}
+		return $items;
 	}
 
 	/**
 	 * Clear Settings cache.
 	 */
-	public static function cacheFlush( string $name = '' ): void
+	public function cacheFlush( string $key = '' ): int
 	{
-		static::cacheDeleteAll( static::CACHE[$name] ?? static::CACHE ?? null);
+		return $this->cacheDeleteAll( $key ?: array_keys( $this->cacheKeys ) );
 	}
 
 	/**
 	 * Print some debug info.
 	 */
-	public static function actionRenderConfig(): void
+	public function actionRenderConfig(): void
 	{
 		echo '<ol>';
 		echo '<li><a href="#config">Plugin::cfg()</a></li>';
@@ -524,8 +570,8 @@ class Settings
 
 		// -------------------------------------------------------------------------------------------------------------
 		// Plugin
-		printf( '<a id="config">%s::cfg() </a>', get_class( static::$Plugin ) );
-		$cfg = static::$Factory->cfg();
+		printf( '<a id="config">%s::cfg() </a>', get_class( $this->Plugin ) );
+		$cfg = $this->Factory->cfg();
 		ksort( $cfg );
 		print_r( $cfg );
 
@@ -569,13 +615,13 @@ class Settings
 	/**
 	 * Parse and print README.md
 	 */
-	public static function actionRenderReadme(): void
+	public function actionRenderReadme(): void
 	{
-		$pluginUrl = static::$Factory->get( 'plugin_url' );
-		$pluginDir = static::$Factory->get( 'plugin_dir' );
+		$pluginUrl = $this->Factory->get( 'plu_plugin_url' );
+		$pluginDir = $this->Factory->get( 'plu_plugin_dir' );
 
 		$text = file_get_contents( "$pluginDir/README.md" );
-		$text = ( new Parsedown() )->text( $text );
+		$text = ( new \Parsedown() )->text( $text );
 		$text = preg_replace( '~(?:src|href)=[\'"](?!http://|https://|/)\K([^\'"]*)~i', "$pluginUrl/$1", $text );
 		echo $text;
 	}
@@ -588,20 +634,20 @@ class Settings
 	 * however it is PRIVATE since it creates private JS object!
 	 * You must overwrite this method in derived class otherwise you will get the AirDB JS object.
 	 */
-	public static function jsObject( array $data = [] ): array
+	public function jsObject( array $data = [] ): array
 	{
 		/* @formatter:off */
 		return array_replace_recursive([
-			'l10n' => [
+			'debug' => WP_DEBUG,
+			'url'   => admin_url( 'admin-ajax.php' ),
+			'l10n'  => [
 				'error' => 'An error occured',
 				'wait'  => 'Wait...',
 			],
-			'url' => admin_url( 'admin-ajax.php' ),
 			'nonce' => [
-				'name'   => static::$Plugin::NONCE['ajax']['name'],
-				'action' => wp_create_nonce( static::$Plugin::NONCE['ajax']['action'] ),
+				'name'   => $this->Factory->get( 'plu_ajax_nonce_name' ),
+				'action' => wp_create_nonce( $this->Factory->get( 'plu_ajax_nonce_action' ) ),
 			],
-			'debug' => (bool) static::$Factory->get( 'debug' ),
 		], $data );
 		/* @formatter:on */
 	}
@@ -610,18 +656,18 @@ class Settings
 	 * Add action links.
 	 * @link https://developer.wordpress.org/reference/hooks/plugin_action_links_plugin_file/
 	 */
-	public static function filterActionLinks( array $actions ): array
+	public function filterActionLinks( array $actions ): array
 	{
-		$actions['settings'] = static::toolLink( 'settings' );
+		$actions['settings'] = $this->toolLink( 'settings' );
 		return $actions;
 	}
 
 	/**
 	 * Get Settings tools page header title.
 	 */
-	public static function toolHeader(): string
+	public function toolHeader(): string
 	{
-		$action = static::getAction();
+		$action = $this->getAction();
 
 		/* @formatter:off */
 		return strtr( <<<HTML
@@ -630,10 +676,10 @@ class Settings
 				<a href="{url}">{name} - {title}</a>
 			</h1>
 			HTML, [
-			'{name}'  => static::$Factory->get( 'name' ),
-			'{url}'   => static::toolUrl( $action ),
-			'{icon}'  => static::$tools[$action]['icon'],
-			'{title}' => static::$tools[$action]['title'],
+			'{name}'  => $this->Factory->get( 'plu_name' ),
+			'{url}'   => $this->toolUrl( $action ),
+			'{icon}'  => $this->tools[$action]['icon'],
+			'{title}' => $this->tools[$action]['title'],
 		]);
 		/* @formatter:on */
 	}
@@ -641,15 +687,15 @@ class Settings
 	/**
 	 * Get Settings tools page link.
 	 */
-	public static function toolLink( string $action = '', bool $addIcon = false ): string
+	public function toolLink( string $action = '', bool $addIcon = false ): string
 	{
 		$action = $action ?: 'settings';
-		$icon = static::$tools[$action]['icon'];
+		$icon = $this->tools[$action]['icon'];
 
 		/* @formatter:off */
 		return strtr( '<a href="{action}" style="white-space:nowrap;">{icon}{title}</a>', [
-			'{action}' => static::toolUrl( $action ),
-			'{title}'  => static::$tools[$action]['title'],
+			'{action}' => $this->toolUrl( $action ),
+			'{title}'  => $this->tools[$action]['title'],
 			'{icon}'   => $addIcon ? "<span class=\"dashicons dashicons-{$icon}\"></span>" : '',
 		]);
 		/* @formatter:on */
@@ -662,11 +708,11 @@ class Settings
 	 * @param  string $action Current action
 	 * @return string         Full admin url to settings action page
 	 */
-	public static function toolUrl( string $action, bool $long = true ): string
+	public function toolUrl( string $action, bool $long = true ): string
 	{
 		/* @formatter:off */
 		$query = http_build_query([
-			'page'   => static::OPTIONS_PAGE,
+			'page'   => $this->Factory->get( 'stt_options_page' ),
 			'action' => $action
 		], '', $long ? '&amp;' : '&' );
 		/* @formatter:on */
@@ -677,31 +723,31 @@ class Settings
 	/**
 	 * Load FORM Sections from config file.
 	 */
-	public static function getSections(): array
+	public function getSections(): array
 	{
-		return apply_filters( 'ork_settings_sections', require static::$Factory->get( 'config_dir' ) . '/settings_sections.php' );
+		$fields = require $this->Factory->get( 'plu_config_dir' ) . '/settings_sections.php';
+		$action = $this->Factory->get( 'stt_options_name' ) . '_sections';
+		return apply_filters( $action, $fields );
 	}
 
 	/**
 	 * Load FORM Fields from config file.
-	 * Cache results, since it might be used by static::getOption() multiple times for different
+	 * Cache results, since it might be used by $this->getOption() multiple times for different
 	 *
 	 * @see Settings::getOption()
 	 */
-	public static function getInputFields( $key = null ): array
+	public function getInputFields( $key = null ): array
 	{
-		$cKey = static::CACHE['settings'] ?? null;
-		$fields = static::cacheGet( $cKey );
+		$fields = $this->cacheGet( 'settings_inputs' );
 
-		if ( !isset( $fields ) ) {
-			$fields = require static::$Factory->get( 'config_dir' ) . '/settings_inputs.php';
-
-			// Add more...
-			$fields = apply_filters( static::OPTIONS_NAME . '_inputs', $fields );
+		if ( null === $fields ) {
+			$fields = require $this->Factory->get( 'plu_config_dir' ) . '/settings_inputs.php';
+			$action = $this->Factory->get( 'stt_options_name' ) . '_inputs';
+			$fields = apply_filters( $action, $fields );
 
 			// Add required field attrs (name, type)
 			Input::fieldsPrepare( $fields );
-			static::cacheSet( $cKey, $fields );
+			$this->cacheSet( 'settings_inputs', $fields );
 		}
 
 		return $key ? $fields[$key] : $fields;
@@ -711,22 +757,8 @@ class Settings
 	 * Update inputs before displaying.
 	 * @see Settings::getInputFields()
 	 */
-	public static function filterInputFields( array $fields ): array
+	public function filterInputFields( array $fields ): array
 	{
-		/* @formatter:off */
-		$fields['group_b1']['items']['group_b1_nested']['desc'] = 'Items generated in ' . __METHOD__;
-		$fields['group_b1']['items']['group_b1_nested']['inputs'] = [
-			'group_b1_nested_text' => [
-				'type' => 'text',
-				'hint' => 'Im [text] inside [Groupped/Nested]',
-			],
-			'group_b1_nested_cbox' => [
-				'type' => 'checkbox',
-				'tag'  => 'Im [checkbox] inside [Groupped/Nested]',
-			],
-		];
-		/* @formatter:on */
-
 		return $fields;
 	}
 
@@ -737,9 +769,9 @@ class Settings
 	 * @param  string $name Field name
 	 * @return string FORM <input> name
 	 */
-	public static function buildInputName( string $name ): string
+	public function buildInputName( string $name ): string
 	{
-		return static::OPTIONS_NAME . "[$name]";
+		return $this->Factory->get( 'stt_options_name' ) . "[$name]";
 	}
 
 	/**
@@ -753,11 +785,11 @@ class Settings
 	 *    $pagenow == 'options-general.php'
 	 *    FORM values are in DB now!
 	 */
-	protected static function form()
+	protected function form()
 	{
 		// -------------------------------------------------------------------------------------------------------------
 		// Sections:
-		$sections = static::getSections();
+		$sections = $this->getSections();
 		Input::sort( $sections );
 
 		// Register sections
@@ -769,20 +801,21 @@ class Settings
 				function() use( $val ) {
 					printf( '<div class="form-text">%s</div>', $val['desc'] ?? '' );
 				},
-				static::OPTIONS_PAGE
+				$this->Factory->get( 'stt_options_page' )
 			);
 			/* @formatter:on */
 		}
 
 		// -------------------------------------------------------------------------------------------------------------
 		// Inputs:
-		$fields = static::getInputFields();
+		$namespace = $this->Factory->get( 'stt_options_name' );
+		$fields = $this->getInputFields();
 		$jsData = [];
-		$premium = static::$Factory->get( 'premium' );
+		$premium = $this->Factory->get( 'plu_premium' );
 
 		foreach ( Input::fieldsEach( $fields, true ) as $name => &$input ) {
 			// Create namespaced input name: <input name="ork_settings[name]" ... >
-			$input['name'] = static::buildInputName( $name );
+			$input['name'] = $this->buildInputName( $name );
 
 			// Disable all premium options
 			if ( !$premium && isset( $input['premium'] ) ) {
@@ -795,8 +828,8 @@ class Settings
 		}
 		unset( $input );
 
-		// Create POST[ork_settings][data] with filtered values to feed each Input created.
-		$values = [ static::OPTIONS_NAME => static::getOption() ];
+		// Create POST[ork_settings] => Array(DB options) with filtered values to feed each Input created.
+		$values = [ $namespace => $this->getOption() ];
 
 		foreach ( $fields as $name => $input ) {
 			$Input = new Input( $input, $values );
@@ -808,7 +841,7 @@ class Settings
 				function() use ($Input) {
 					echo $Input->getContents();
 				},
-				static::OPTIONS_PAGE,
+				$this->Factory->get( 'stt_options_page' ),
 				$Input->get( 'section' ),
 				[
 					'class' => $Input->get( 'tr_class' ),
@@ -817,16 +850,13 @@ class Settings
 			/* @formatter:on */
 		}
 
-		if ( static::isSettingsRender() ) {
-			static::$Factory->Asset()->enqueue( 'css/settings.css' );
-			static::$Factory->Asset()->enqueue( 'js/settings.js', Input::fieldPluck( 'enqueue', $fields ), static::jsObject( $jsData ) );
+		if ( $this->isSettingsRender() ) {
+			$this->Plugin->enqueue( 'css/settings.css' );
+			$this->Plugin->enqueue( 'js/settings.js', Input::fieldPluck( 'enqueue', $fields ), $this->jsObject( $jsData ) );
 		}
 
-		/*
-		 * Register POST  namespace to allow all nested  automatically saved to DB by WP.
-		 * NOTE: POST data will be serialized to adb_settings[] array with no sanitizing performed!
-		 */
-		register_setting( static::OPTIONS_PAGE, static::OPTIONS_NAME );
+		// Register POST namespace to auto-save inputs to DB (raw data - no sanitizing performed!)
+		register_setting( $this->Factory->get( 'stt_options_page' ), $this->Factory->get( 'stt_options_name' ) );
 	}
 
 	/**
@@ -836,40 +866,67 @@ class Settings
 	 * Options are saved in DB as serialized array (raw data)
 	 * Filtering is done during Input::val()
 	 *
-	 * NOTE:
-	 * Unchecked checkboxes do not appear in POST data
-	 *
 	 * @param string $name Field name
 	 * @param bool   $raw  Unfiltered value?
 	 */
-	public static function getOption( string $name = '', bool $raw = false, $def = '' )
+	public function getOption( string $name = '', bool $raw = false, $def = '' )
 	{
-
 		// Remember requested options array, so we dont have to unserialize it every time
-		static $options = null;
-
-		if ( null === $options ) {
-			$options = get_option( static::OPTIONS_NAME, [] ); // unserialize
+		if ( !isset( $this->options ) ) {
+			$this->options = get_option( $this->Factory->get( 'stt_options_name' ) ); // unserialize
 		}
 
 		if ( '' === $name ) {
-			return $options ?: [];
+			return $this->options ?: [];
 		}
 
 		if ( $raw ) {
-			return $options[$name] ?? $def;
+			return $this->options[$name] ?? $def;
 		}
 
-		if ( !$field = Input::fieldFind( $name, static::getInputFields() ) ) {
+		if ( !$field = Input::fieldFind( $name, $this->getInputFields() ) ) {
 			throw new \InvalidArgumentException( "Field '{$name}' not found!" );
 		}
 
 		// Get filtered value.
 		// Fallback to field[defval] or empty string if no options was saved yet.
-		$Input = new Input( $field, $options );
+		$Input = new Input( $field, $this->options );
 		$value = $Input->val();
 
 		return $value;
+	}
+
+	/**
+	 * Get FORM nonce input.
+	 */
+	public function formNonceInput(): string
+	{
+		$name = $this->Factory->get( 'stt_form_nonce_name' );
+		$value = wp_create_nonce( $this->Factory->get( 'stt_form_nonce_action' ) );
+
+		return <<<HTML
+		<input type="hidden" name="$name" value="$value">
+		HTML;
+	}
+
+	/**
+	 * Check FORM nonce value.
+	 *
+	 * NOTE:
+	 * adminNotices() are parsed on [admin:init] hook, after [submit] but before [render] hook!
+	 * Best use this function in [submit] hook.
+	 */
+	public function formNonceCheck(): bool
+	{
+		$name = $this->Factory->get( 'stt_form_nonce_name' );
+		$action = $this->Factory->get( 'stt_form_nonce_action' );
+		$result = check_ajax_referer( $action, $name, false );
+
+		if ( false === $result ) {
+			$this->adminNotice( 'Error', 'FORM data expired!', [ 'type' => 'error', 'close' => false ] );
+		}
+
+		return $result;
 	}
 
 	/**
@@ -880,36 +937,35 @@ class Settings
 	 *
 	 * @param string $label  Main label for all notice items: "Label: notice1, notice2"
 	 * @param string $notice Notice to add under current [label] collection
-	 * @param array $args   (
-	 *   @type string  [type]  - Notice type: error|warning|success|info. Default empty.
-	 *   @type string  [split] - String used to separate multiple notices under same $label
-	 *   @type boolean [close] - Append dismiss button?
+	 * @param array  $args (
+	 * [type]  - Notice type: error|warning|success|info. Default: empty.
+	 * [split] - String used to separate multiple notices under same $label. Default: comma.
+	 * [close] - Append dismiss button? Default: yes.
 	 * )
 	 */
-	public static function adminNotice( string $label, string $notice, array $args = [] ): void
+	public function adminNotice( string $label, string $notice, array $args = [] ): void
 	{
+		$notices = $this->notices[$label] ?? [];
+		$notices['items'][] = $notice;
+
 		/* @formatter:off */
-		$args = array_merge([
+		$this->notices[$label] = array_merge([
 			'type'  => '',
 			'split' => ', ',
 			'close' => true,
-			'items' => [],
-		], $args);
+		], $notices, $args );
 		/* @formatter:on */
-
-		static::$adminNotices[$label] = array_merge( $args, static::$adminNotices[$label] ?? []);
-		static::$adminNotices[$label]['items'][] = $notice;
 	}
 
 	/**
 	 * Flush admin notices.
 	 * @link https://developer.wordpress.org/reference/hooks/admin_notices/
 	 */
-	public static function adminNotices(): string
+	public function adminNotices(): string
 	{
 		$out = '';
 
-		foreach ( static::$adminNotices as $label => $notice ) {
+		foreach ( $this->notices as $label => $notice ) {
 
 			// Remove empty items
 			$notice['items'] = array_filter( $notice['items'] );
@@ -923,30 +979,30 @@ class Settings
 			]);
 			/* @formatter:on */
 		}
-		static::$adminNotices = []; // reset
+		$this->notices = []; // reset
 
 		return $out;
 	}
 
 	/**
 	 * Build transient key.
-	 * @see Plugin::TRANSIENTS
+	 * @see Plugin::$transients
 	 */
-	protected static function transientId( string $name ): string
+	protected function transientId( string $key ): string
 	{
-		return static::TRANSIENT_PREFIX . $name;
+		return $this->Factory->get( 'stt_transient_prefix' ) . $key;
 	}
 
 	/**
 	 * Add admin transcient (short-life message turned into notice).
 	 *
 	 * @link https://developer.wordpress.org/apis/transients/
-	 * @see Plugin::TRANSIENTS
+	 * @see Plugin::$transients
 	 * @see Plugin::adminNotices()
 	 */
-	public static function adminTransient( string $name, array $args = [] ): bool
+	public function adminTransient( string $key, array $args = [] ): bool
 	{
-		if ( !isset( static::TRANSIENTS[$name] ) ) {
+		if ( !isset( $this->transients[$key] ) ) {
 			return false;
 		}
 
@@ -954,25 +1010,25 @@ class Settings
 		$args = array_merge_recursive([
 			'type'   => 'warning',
 			'close'  => false,
-			'label'  => static::$Factory->get( 'name' ),
+			'label'  => $this->Factory->get( 'plu_name' ),
 			'expire' => 0,
 			'tokens' => [
-				'{name}' => static::$Factory->get( 'name' ),
+				'{name}' => $this->Factory->get( 'plu_name' ),
 			],
 		], $args);
 		/* @formatter:on */
 
-		return set_transient( static::transientId( $name ), $args, $args['expire'] );
+		return set_transient( $this->transientId( $key ), $args, $args['expire'] );
 	}
 
 	/**
 	 * Turn transients into admin notices.
 	 */
-	public static function adminTransients(): void
+	public function adminTransients(): void
 	{
-		foreach ( static::TRANSIENTS as $name => $format ) {
-			if ( $args = get_transient( $id = static::transientId( $name ) ) ) {
-				static::adminNotice( $args['label'], strtr( $format, $args['tokens'] ), $args );
+		foreach ( $this->transients as $name => $format ) {
+			if ( $args = get_transient( $id = $this->transientId( $name ) ) ) {
+				$this->adminNotice( $args['label'], strtr( $format, $args['tokens'] ), $args );
 				delete_transient( $id );
 			}
 		}
@@ -981,9 +1037,9 @@ class Settings
 	/**
 	 * Display admin notices in dashboard.
 	 */
-	public static function actionAdminNotices(): void
+	public function actionAdminNotices(): void
 	{
-		static::adminTransients();
-		echo static::adminNotices();
+		$this->adminTransients();
+		echo $this->adminNotices();
 	}
 }

@@ -6,27 +6,13 @@
 namespace Orkan\WP\Base;
 
 /*
- * Plugin Name: Ork Base
+ * Plugin Name: Example WP Plugin entry point file
  * Description: WordPress plugin boilerplate.
- * Version: 1.0.2
- * Date: Sat, 11 May 2024 18:21:46 +02:00
+ * Version: 2.0.0
+ * Date: Fri, 17 May 2024 16:41:20 +02:00
  * Author: Orkan <orkans+wpbase@gmail.com>
  * Author URI: https://github.com/orkan
  */
-
-// =====================================================================================================================
-// All pages
-Factory::Factory()->merge([
-// 	'debug'   => false,
-	'premium' => false,
-]);
-Factory::Plugin()->run();
-
-// =====================================================================================================================
-// Dashboard, Ajax
-if ( is_admin() ) {
-	Factory::Mailer()->run();
-	Factory::Formix()->run();
-	Factory::Ajaxer()->run();
-	Factory::Settings()->run(); // Register tools first!
-}
+$Factory = new Factory();
+$Factory->Plugin()->run();
+unset( $Factory );
