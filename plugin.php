@@ -8,8 +8,8 @@ namespace Orkan\WP\Base;
 /*
  * Plugin Name: Example WP Plugin entry point file
  * Description: WordPress plugin boilerplate.
- * Version: 2.0.0
- * Date: Fri, 17 May 2024 16:41:20 +02:00
+ * Version: 3.0.0
+ * Date: Sun, 26 May 2024 17:31:07 +02:00
  * Author: Orkan <orkans+wpbase@gmail.com>
  * Author URI: https://github.com/orkan
  */

@@ -1,0 +1,20 @@
+/* {FILE: _inputs.css} */
+
+:root {
+  --ork-locked-bg: url('img/padlock_closed_32x32.png') no-repeat;
+}
+
+.ork-locked-tr td {
+  padding-left: 42px !important;
+  background: var(--ork-locked-bg);
+}
+
+.ork-locked-info::before {
+  content: '';
+  display: block;
+  background: var(--ork-locked-bg);
+  width: 32px;
+  height: 32px;
+  float: left;
+  margin-right: 6px;
+}

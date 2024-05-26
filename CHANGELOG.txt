@@ -1,0 +1,13 @@
+===================================================================================================
+v3.0.0
+Updated methods:
+---------------
+Plugin::enqueue(asset, deps, data, options) > Plugin::enqueue(asset, args[deps, data, ...opts])
+
+Renamed config:
+---------------
+Asset::cfg[assets_loc]  > Asset::cfg[assets]
+
+Removed config:
+---------------
+Plugin::cfg[plu_js_var] > Use Plugin::cfg[plu_slug]

@@ -1,0 +1,16 @@
+/* Fix form-table from wp-admin/css/forms.css */
+.form-table th,
+.form-table td {
+  padding: 0.3em !important;
+  padding-left: 0 !important;
+  vertical-align: top !important;
+  line-height: 2.3 !important;
+}
+.form-table td li {
+  line-height: 1.3 !important;
+}
+
+/* Bugfix: labels goes to bottom?!? */
+.form-table label {
+  vertical-align: unset;
+}

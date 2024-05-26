@@ -40,32 +40,35 @@ class Composer
 	 */
 	public static function rebuildAssets( Event $Event )
 	{
-		if ( !getenv( 'PLUGIN' ) ) {
-			throw new \InvalidArgumentException( 'Missing plugin basedir name. Use @putenv PLUGIN=name' );
+		if ( !getenv( 'FACTORY' ) ) {
+			throw new \InvalidArgumentException( 'Missing required Factory class. Use @putenv FACTORY=class' );
 		}
 
+		// Load WP config
 		$extra = $Event->getComposer()->getPackage()->getExtra();
 		define( 'ORK_STANDALONE', true );
 		require $extra['ork-wp-base']['wp-config'];
 
-		$base = getenv( 'PLUGIN' );
-		$plug = substr( WP_PLUGIN_DIR, strlen( ABSPATH ) );
-		$path = $plug . '/' . $base; // plugin dir path
-
-		$loc = $path . '/assets';
-		$abs = ABSPATH . $loc;
+		// Load Plugin defaults
+		$class = getenv( 'FACTORY' );
+		$Reflector = new \ReflectionClass( $class );
+		$classFile = $Reflector->getFileName();
+		$GLOBALS['plugin'] = dirname( $classFile, 2 ) . '/plugin.php';
+		$Factory = new $class();
+		$Factory->Plugin()->run();
+		$Asset = $Factory->Asset();
 
 		/* @formatter:off */
-		$Asset = new Asset([
-			'assets_loc'  => $loc,
+		$Asset->merge([
 			'build'       => true,
 			'rebuild_css' => true,
 			'rebuild_js'  => true,
 			'minify_css'  => true,
 			'minify_js'   => true,
-		]);
+		], true );
 		/* @formatter:on */
 
+		$abs = ABSPATH . $Factory->get( 'plu_assets_loc' );
 		echo "Source: {$abs}\n";
 
 		foreach ( [ 'css', 'js' ] as $type ) {

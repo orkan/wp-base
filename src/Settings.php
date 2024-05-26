@@ -96,6 +96,7 @@ class Settings
 		$this->Plugin = $Factory->Plugin();
 
 		$this->Factory->merge( self::defaults() );
+		$this->cacheRegister( 'settings_inputs' );
 	}
 
 	/**
@@ -106,8 +107,6 @@ class Settings
 		if ( $this->ready ) {
 			return;
 		}
-
-		$this->cacheRegister( 'settings_inputs' );
 
 		$isAjax = wp_doing_ajax();
 		$isPage = !$isAjax && is_admin();
@@ -628,11 +627,6 @@ class Settings
 
 	/**
 	 * Get default javascript object.
-	 *
-	 * CAUTION:
-	 * This method must stay public to allow access from other modules,
-	 * however it is PRIVATE since it creates private JS object!
-	 * You must overwrite this method in derived class otherwise you will get the AirDB JS object.
 	 */
 	public function jsObject( array $data = [] ): array
 	{
@@ -852,7 +846,12 @@ class Settings
 
 		if ( $this->isSettingsRender() ) {
 			$this->Plugin->enqueue( 'css/settings.css' );
-			$this->Plugin->enqueue( 'js/settings.js', Input::fieldPluck( 'enqueue', $fields ), $this->jsObject( $jsData ) );
+			/* @formatter:off */
+			$this->Plugin->enqueue( 'js/settings.js', [
+				'deps' => Input::fieldPluck( 'enqueue', $fields ),
+				'data' => $this->jsObject( $jsData ),
+			]);
+			/* @formatter:on */
 		}
 
 		// Register POST namespace to auto-save inputs to DB (raw data - no sanitizing performed!)
@@ -873,7 +872,7 @@ class Settings
 	{
 		// Remember requested options array, so we dont have to unserialize it every time
 		if ( !isset( $this->options ) ) {
-			$this->options = get_option( $this->Factory->get( 'stt_options_name' ) ); // unserialize
+			$this->options = get_option( $this->Factory->get( 'stt_options_name' ), [] ); // unserialize
 		}
 
 		if ( '' === $name ) {

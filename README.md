@@ -1,4 +1,4 @@
-# WordPress plugin boilerplate `v2.0.0`
+# WordPress plugin boilerplate `v3.0.0`
 Extendable PHP classes for easy customization.
 
 ## Out-of-the-box:
@@ -13,11 +13,11 @@ This package was made to provide a foundation to create your own WordPress plugi
 
 This package will install in Composer [vendor] dir, making it inaccessible from WordPress installation.
 You must create your own folder in WP [plugins] dir and extend only those classes you will need in your project.
-A working example of such plugin can be found in this WordPress/Composer plugin package: [orkan/wp-base1](https://github.com/orkan/wp-base1)
+A working example of such plugin can be found here: [Base1](https://github.com/orkan/wp-base1)
 
 ## Create plugin:
 Create your plugin entry point file `[WP]/wp-content/plugins/[your_plugin]/plugin.php`
-then  `run()` only those parts of this package you want:
+then  `run()` only the necessary parts:
 ```php
 namespace My\Name;
 /*
@@ -29,7 +29,7 @@ $Factory->Settings()->run();
 ```
 
 ## Tools:
-The [orkan/wp-base1](https://github.com/orkan/wp-base1) package comes with some example Tools and their CSS/JS assets (`/assets` dir) and FORM input definitions ( `/config` dir). The included Tools are:
+The [Base1](https://github.com/orkan/wp-base1) package comes with some example Tools and their CSS/JS assets (`/assets` dir) and FORM input definitions ( `/config` dir). The included Tools are:
 ```php
 $Factory->Mailer()->run(); // Example with WP Mail form
 $Factory->Formix()->run(); // Example how to create custom FORM with various inputs
@@ -45,7 +45,7 @@ define( 'ORK_ASSET_REBUILD_JS', true );
 define( 'ORK_ASSET_MINIFY_CSS', true );
 define( 'ORK_ASSET_MINIFY_JS', true );
 ```
-Another way to rebuild assets is by using a Composer script command: `composer run rebuildMyPluginAssets` described in next section.
+Another way to rebuild assets is by using a Composer script command: `composer run rebuildOrkWpBaseAssets` described in next section.
 
 ## Composer:
 Composer is required to install this plugin and all its dependencies and also to support autoloading class files.
@@ -65,7 +65,7 @@ Turn your plugin into Composer package by adding these lines in your plugin's `c
 "name": "my/wp-plugin",
 "type": "wordpress-plugin",
 "require": {
-	"orkan/wp-base": "^2"
+	"orkan/wp-base": "^3"
 },
 "autoload": {
 	"psr-4": {
@@ -98,7 +98,7 @@ If you decide to build your assets automatically by using Composer scripts featu
 }
 "scripts": {
 	"rebuildMyPluginAssets": [
-		"@putenv PLUGIN=my-plugin",
+		"@putenv FACTORY=Orkan\\WP\\MyPlugin\\Factory",
 		"Orkan\\WP\\Base\\Utils\\Composer::rebuildAssets"
 	],
 	"post-autoload-dump": [
@@ -120,4 +120,4 @@ Now you can also manually rebuild assets by running this command: `composer run 
 [Orkan](https://github.com/orkan)
 
 ## Updated
-Fri, 17 May 2024 16:41:20 +02:00
+Sun, 26 May 2024 17:31:07 +02:00

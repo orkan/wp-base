@@ -14,8 +14,7 @@ use Orkan\Utils;
  */
 class Plugin
 {
-	const NAME = 'Ork Base';
-	const VERSION = '2.0.0';
+// 	const SLUG = 'base';
 
 	/**
 	 * Location to current entry point plugin file loaded by WP.
@@ -143,9 +142,6 @@ class Plugin
 		 * [plu_premium]
 		 * Used in: Settings page: replace inputs[premium] with <span>
 		 *
-		 * [plu_js_var]
-		 * JS global variable name holding enqueued JS object
-		 *
 		 * @formatter:off */
 		return [
 			// Paths
@@ -160,12 +156,12 @@ class Plugin
 			'plu_ajax_nonce_name'   => 'nonce',
 			'plu_ajax_nonce_action' => 'ork_ajax_action',
 			// Other
-			'plu_name'       => static::NAME,
-			'plu_version'    => static::VERSION,
-			'plu_slug'       => $base,
-			'plu_debug'      => static::VERSION === '@' . 'Version@',
-			'plu_premium'    => true,
-			'plu_js_var'     => 'ork',
+			'plu_name'          => $this->Factory::NAME,
+			'plu_version'       => $this->Factory::VERSION,
+			'plu_slug'          => $this->Factory::SLUG,
+			'plu_debug'         => $this->Factory::VERSION === '@' . 'Version@',
+			'plu_premium'       => true,
+			'plu_assets_filter' => [ $this, 'filterAssets' ],
 		];
 		/* @formatter:on */
 	}
@@ -206,10 +202,16 @@ class Plugin
 
 	 * @param string $asset   Path to asset relative to cfg[assets] dir, eg. 'js/main.js'
 	 * @param array  $deps    Dependencies. Without -js, -css sufixes
-	 * @param string $data    [JS only] Inline script or array that will be converted to object: window.ork = {data}
-	 * @param array  $options [CSS/JS] Extra options
+	 * @param string $data
+	 * @param array  $options Extra options (
+	 * [deps]     => Dependencies. Without -js, -css sufixes
+	 * [media]    => CSS: media types like all|print|screen|orientation: portrait|max-width: 640px
+	 * [data]     => JS: Inline script or array that will be converted to object: cfg[plu_js_var] = {data}
+	 * [footer]   => JS: Enqueue in footer?
+	 * [position] => JS: Enqueue data before|after script
+	 * )
 	 */
-	public function enqueue( string $asset, array $deps = [], $data = '', array $options = [] ): void
+	public function enqueue( string $asset, array $args = [] ): array
 	{
 		$Settings = $this->Factory->Settings();
 		$Asset = $this->Factory->Asset();
@@ -221,26 +223,41 @@ class Plugin
 		}
 
 		/* @formatter:off */
-		$args = array_merge( $options, [
+		$args = array_merge([
+			'var'      => $this->Factory->get( 'plu_slug' ),
+			'deps'     => null,
+			'data'     => null,
 			'footer'   => true,
 			'position' => 'before',
 			'media'    => 'all',
-		]);
+		], $args );
 		/* @formatter:on */
 
 		if ( 'css' === $info['dirname'] ) {
-			wp_enqueue_style( $info['handle'], $info['location'], $deps, $info['version'], $args['media'] );
+			wp_enqueue_style( $info['handle'], $info['location'], $args['deps'], $info['version'], $args['media'] );
 		}
 		else {
-			wp_enqueue_script( $info['handle'], $info['location'], $deps, $info['version'], $args['footer'] );
+			wp_enqueue_script( $info['handle'], $info['location'], $args['deps'], $info['version'], $args['footer'] );
 
-			if ( $data ) {
-				if ( is_array( $data ) ) {
-					$data = sprintf( 'var %s = %s', $this->Factory->get( 'plu_js_var' ), json_encode( $data ) ); // maybe JSON_FORCE_OBJECT
-				}
-				wp_add_inline_script( $info['handle'], $data, $args['position'] );
+			if ( is_array( $args['data'] ) ) {
+				$args['data'] = sprintf( 'var %s = %s', $args['var'], json_encode( $args['data'] ) );
 			}
+			wp_add_inline_script( $info['handle'], $args['data'], $args['position'] );
 		}
+
+		return $info;
+	}
+
+	/**
+	 * Callback: Asset filter.
+	 */
+	public function filterAssets( string $out, string $type ): string
+	{
+		if ( 'js' === $type ) {
+			$out = preg_replace( '~\$plu(\W)~', $this->Factory->get( 'plu_slug' ) . '$1', $out );
+		}
+
+		return $out;
 	}
 
 	/**

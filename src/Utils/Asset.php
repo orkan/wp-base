@@ -39,7 +39,7 @@ class Asset
 	private function defaults()
 	{
 		/*
-		 * [assets_loc]
+		 * [assets]
 		 * Relative path from WP root to [assets] dir
 		 *
 		 * [version]
@@ -65,9 +65,12 @@ class Asset
 		 * [force_min]
 		 * Use minified version in [debug] mode. By default the [src] version is used in [location].
 		 *
+		 * [filter]
+		 * CSS/JS filter callback.
+		 *
 		 * @formatter:off */
 		return [
-			'assets_loc'  => 'wp-content/plugins/{plugin}/assets',
+			'assets'      => 'wp-content/plugins/{plugin}/assets',
 			'version'     => '',
 			'abspath'     => @constant( 'ABSPATH' ),
 			'debug'       => @constant( 'WP_DEBUG' ),
@@ -77,6 +80,7 @@ class Asset
 			'minify_css'  => @constant( 'ORK_ASSET_MINIFY_CSS' ),
 			'minify_js'   => @constant( 'ORK_ASSET_MINIFY_JS' ),
 			'force_min'   => @constant( 'ORK_ASSET_FORCE_MIN' ),
+			'filter'      => null,
 		];
 		/* @formatter:on */
 	}
@@ -119,7 +123,7 @@ class Asset
 	public function info( string $asset ): array
 	{
 		$info = pathinfo( $asset );
-		$info['dir'] = $this->get( 'assets_loc' ) . '/' . $info['dirname'];
+		$info['dir'] = $this->get( 'assets' ) . '/' . $info['dirname'];
 		$info['src'] = sprintf( '%s/%s.%s', $info['dir'], $info['filename'], $info['extension'] );
 		$info['min'] = sprintf( '%s/%s.min.%s', $info['dir'], $info['filename'], $info['extension'] );
 		$info['handle'] = 'ork-' . $info['filename'];
@@ -157,11 +161,11 @@ class Asset
 				throw new \InvalidArgumentException( strtr( <<<EOT
 					Assets [src] dir not found: "{dir}". Please check: 
 					cfg[abspath]: "{abs}"
-					cfg[assets_loc]: "{loc}"
+					cfg[assets]: "{loc}"
 					EOT, [
 					'{dir}' => $absDir,
 					'{abs}' => $this->get( 'abspath' ),
-					'{loc}' => $this->get( 'assets_loc' ),
+					'{loc}' => $this->get( 'assets' ),
 				]));
 			}
 			if ( !is_file( $tplFile ) ) {
@@ -212,6 +216,13 @@ class Asset
 			$out = substr( $tplFile, strlen( $this->get( 'abspath' ) ) ); // cut abspath
 			$out = "/* DO NOT EDIT - AUTO-GENERATED FROM: $out */\n";
 			$out .= implode( '', $srcBody );
+
+			// ---------------------------------------------------------------------------------------------------------
+			// Filter?
+			if ( is_callable( $callback = $this->get('filter') ) ) {
+				$out = call_user_func( $callback, $out, $info['extension'] );
+			}
+
 			file_put_contents( $absSrc, $out );
 			$this->stats['rebuild'][] = $absSrc;
 
